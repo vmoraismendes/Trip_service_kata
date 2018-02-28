@@ -1,0 +1,525 @@
+*&---------------------------------------------------------------------*
+*&   Trip Service Requirements Specification
+*&---------------------------------------------------------------------*
+*&
+*&  Imagine building a social networking website for travellers
+*&    - users need to be logged in to see the content
+*&    - users need to be a friend to see someone else's trips
+*&
+*&  You cannot change production code if not covered by tests
+*&    - basic refactorings are allowed, but only if needed to write tests
+*&
+*&  Start testing from shortest to deepest branch
+*&  Start refactoring from deepest to shortest branch
+*&
+*&  Give it a go, the starting point is the LTC_TRIP_SERVICE_TEST class
+*&*********************************************************************
+*&  Vinícius de Morais Mendes - Trip Service KATA
+*&*********************************************************************
+program yy_pao_trip_service.
+
+*& Production Code - Exceptions
+class lcx_user_not_logged_in definition final inheriting from cx_static_check.
+endclass.
+
+class lcx_collaborator_call definition final inheriting from cx_dynamic_check.
+  public section.
+    methods:
+      constructor
+        importing iv_text type string,
+      get_text redefinition.
+  private section.
+    data mv_text type string.
+endclass.
+
+class lcx_collaborator_call implementation.
+  method constructor.
+    super->constructor( ).
+    mv_text = iv_text.
+  endmethod.
+  method get_text.
+    result = mv_text.
+  endmethod.
+endclass.
+
+*& Production Code - Trips
+class lcl_user definition deferred.
+
+class lcl_trip definition final.
+  public section.
+    types:
+      tt_trip type standard table of ref to lcl_trip with empty key.
+endclass.
+
+class lcl_trip_dao definition final.
+  public section.
+    class-methods:
+      find_trips_by_user
+        importing io_user         type ref to lcl_user
+        returning value(rt_trips) type lcl_trip=>tt_trip.
+
+    methods:
+      tripsby
+        importing io_user         type ref to lcl_user
+        returning value(rt_trips) type lcl_trip=>tt_trip.
+endclass.
+
+class lcl_trip_service definition.
+  public section.
+    methods:
+      getfriendstrips
+        importing io_user         type ref to lcl_user
+                  io_loggedinuser type ref to lcl_user
+        returning value(rt_trips) type lcl_trip=>tt_trip
+        raising   lcx_user_not_logged_in.
+
+    methods:
+      constructor
+        importing io_trip_dao type ref to lcl_trip_dao optional.
+
+  private section.
+    data trip_dao type ref to lcl_trip_dao.
+    data mv_tripdao_test  type boolean.
+
+    methods:
+      notrips
+        returning value(rt_trips) type lcl_trip=>tt_trip.
+
+    methods:
+      tripsby
+        importing
+          io_user             type ref to lcl_user
+        returning
+          value(ct_trip_list) type lcl_trip=>tt_trip.
+
+    methods:
+      validate
+        importing
+          io_loggedinuser type ref to lcl_user
+        raising
+          lcx_user_not_logged_in.
+endclass.
+
+*& Production Code - Users
+class lcl_user definition final.
+  public section.
+    types:
+      tt_user type standard table of ref to lcl_user with empty key.
+    methods:
+      add_friend
+        importing io_user type ref to lcl_user,
+
+      add_trip
+        importing io_trip type ref to lcl_trip,
+
+      friends
+        returning value(rt_users) type tt_user,
+
+      trips
+        returning value(rt_trips) type lcl_trip=>tt_trip,
+
+      isfriendwith
+        importing io_user           type ref to lcl_user
+        returning value(r_isfriend) type abap_bool.
+
+  private section.
+    data:
+      mt_trips   type lcl_trip=>tt_trip,
+      mt_friends type tt_user.
+endclass.
+
+class lcl_user_session definition final create private.
+  public section.
+    class-methods:
+      class_constructor,
+      instance
+        returning value(ro_value) type ref to lcl_user_session.
+
+    methods:
+      logged_user
+        returning value(ro_value) type ref to lcl_user.
+
+  private section.
+    class-data:
+      go_user_session type ref to lcl_user_session.
+endclass.
+
+class lcl_trip_dao implementation.
+
+  method find_trips_by_user.
+    raise exception type lcx_collaborator_call
+      exporting
+        iv_text = |lcl_trip_dao should not be invoked during unit test|.
+  endmethod.
+
+  method tripsby.
+    rt_trips = lcl_trip_dao=>find_trips_by_user( io_user ).
+  endmethod.
+
+endclass.
+
+class lcl_user implementation.
+  method add_friend.
+    append io_user to mt_friends.
+  endmethod.
+  method add_trip.
+    append io_trip to mt_trips.
+  endmethod.
+  method friends.
+    rt_users = mt_friends.
+  endmethod.
+  method trips.
+    rt_trips = mt_trips.
+  endmethod.
+  method isfriendwith.
+    r_isfriend = cond #( when line_exists( mt_friends[ table_line = io_user ] )
+                         then abap_true ).
+  endmethod.
+endclass.
+
+class lcl_user_session implementation.
+  method class_constructor.
+    go_user_session = new #( ).
+  endmethod.
+  method instance.
+    ro_value = go_user_session.
+  endmethod.
+  method logged_user.
+    raise exception type lcx_collaborator_call
+      exporting
+        iv_text = |lcl_user_session->logged_user() should not be called during unit test|.
+  endmethod.
+endclass.
+
+*& Production Code - To be tested and refactored
+class lcl_trip_service implementation.
+
+  method constructor.
+    if io_trip_dao is supplied.
+      trip_dao = io_trip_dao.
+      mv_tripdao_test = abap_true.
+    else.
+      trip_dao = new #( ).
+    endif.
+  endmethod.
+
+  method getfriendstrips.
+    validate( io_loggedinuser ).
+
+    rt_trips = cond #( when io_user->isfriendwith( io_loggedinuser )
+                       then tripsby( io_user = io_user )
+                       else notrips( ) ).
+  endmethod.
+
+  method notrips.
+    rt_trips = value lcl_trip=>tt_trip( ).
+  endmethod.
+
+  method tripsby.
+    ct_trip_list = cond #( when mv_tripdao_test eq abap_true
+                           then io_user->trips( )
+                           else trip_dao->tripsby( io_user ) ).
+  endmethod.
+
+
+  method validate.
+    if io_loggedinuser is not bound.
+      raise exception type lcx_user_not_logged_in.
+    endif.
+  endmethod.
+
+endclass.
+
+*& Test Code
+class ltc_trip_service_test definition deferred.
+
+class lcl_user_builder definition.
+
+  public section.
+    types:
+      tt_user  type standard table of ref to lcl_user with empty key,
+      tt_trips type standard table of ref to lcl_trip with empty key.
+
+    class-methods:
+      class_constructor,
+      get_instance
+        returning value(ro_auser) type ref to lcl_user_builder.
+
+    methods: with_thip
+      importing io_trip         type ref to lcl_trip
+      returning value(ro_trips) type ref to lcl_user_builder.
+
+    methods: with_friend
+      importing io_user         type ref to lcl_user
+      returning value(ro_users) type ref to lcl_user_builder.
+
+    methods: build
+      returning value(ro_user) type ref to lcl_user.
+
+  private section.
+    class-data: mo_user_builder type ref to lcl_user_builder.
+    data: mt_friends type tt_user.
+    data: mt_trips   type tt_trips.
+
+    methods: addtripsto
+      changing value(co_user) type ref to lcl_user.
+
+    methods: addfriendsto
+      changing value(co_user) type ref to lcl_user.
+
+    methods: cleanup_after_build.
+
+endclass.
+
+class lcl_user_builder implementation.
+
+  method: class_constructor.
+    mo_user_builder = new #( ).
+  endmethod.
+
+  method: get_instance.
+    ro_auser = mo_user_builder.
+  endmethod.
+
+  method:with_thip.
+    append io_trip to mt_trips.
+    ro_trips = me.
+  endmethod.
+
+  method:with_friend.
+    append io_user to mt_friends.
+    ro_users = me.
+  endmethod.
+
+  method: build.
+    ro_user = new lcl_user( ).
+    addtripsto( changing co_user = ro_user ).
+    addfriendsto( changing co_user = ro_user ).
+    cleanup_after_build( ).
+  endmethod.
+
+  method: addtripsto.
+    loop at mt_trips assigning field-symbol(<fs_trips>).
+      co_user->add_trip( <fs_trips> ).
+    endloop.
+  endmethod.
+
+  method: addfriendsto.
+    loop at mt_friends assigning field-symbol(<fs_friends>).
+      co_user->add_friend( <fs_friends> ).
+    endloop.
+  endmethod.
+
+  method: cleanup_after_build.
+    free: mt_friends,
+          mt_trips.
+  endmethod.
+
+endclass.
+
+class ltc_trip_service_test definition
+                            final risk level harmless for testing.
+
+  private section.
+    data:       o_trip_service  type ref to lcl_trip_service.
+    data:       o_trip_dao       type ref to lcl_trip_dao.
+    class-data: o_guest          type ref to lcl_user,
+                o_unused_user    type ref to lcl_user,
+                o_registred_user type ref to lcl_user,
+                o_another_user   type ref to lcl_user,
+                o_to_brazil      type ref to lcl_trip,
+                o_to_london      type ref to lcl_trip.
+
+    methods: setup.
+    methods: teardown.
+
+    "SHOULD......................
+    methods: throw_exception_user_notlogged for testing.
+    methods: not_ret_trips_users_not_friend for testing.
+    methods: ret_friend_trips_users_friends for testing.
+
+endclass.
+
+class ltc_trip_service_test implementation.
+
+  method setup.
+
+    o_another_user   = new #( ).
+    o_registred_user = new #( ).
+    o_to_brazil      = new #( ).
+    o_to_london      = new #( ).
+
+  endmethod.
+
+  method teardown.
+
+    free:  o_trip_service,
+           o_another_user,
+           o_registred_user,
+           o_to_brazil,
+           o_to_london,
+           o_trip_dao.
+
+  endmethod.
+
+  "SHOULD......................
+  "throw an exception when user is not logged in
+  method throw_exception_user_notlogged.
+    o_trip_service = new #( ).
+    try.
+        o_trip_service->getfriendstrips( io_user = o_unused_user
+                                            io_loggedinuser = o_guest ).
+      catch lcx_user_not_logged_in.
+        data(lv_exception_occured) = abap_true.
+    endtry.
+
+    cl_abap_unit_assert=>assert_true(
+      act  = lv_exception_occured
+      msg  = |User is Loggedin, exception did not occurred| ).
+
+  endmethod.
+
+  "not return any trips when users are not friends
+  method not_ret_trips_users_not_friend.
+    o_trip_service = new #( ).
+    data(o_friend) =
+      lcl_user_builder=>get_instance(
+                     )->with_friend( o_another_user
+                     )->with_thip( o_to_brazil
+                     )->build( ).
+
+    try.
+        data(lt_friend_trips) = o_trip_service->getfriendstrips( io_user = o_friend
+                                                                    io_loggedinuser = o_registred_user ).
+      catch lcx_user_not_logged_in.
+    endtry.
+
+    cl_abap_unit_assert=>assert_equals(
+    act = lines( lt_friend_trips )
+    exp = 0
+    msg  = |These retrieved trips are not correct| ).
+
+  endmethod.
+
+  " return friend trips when users are friends
+  method ret_friend_trips_users_friends.
+    o_trip_dao = new #( ).
+    o_trip_service = new #( io_trip_dao = o_trip_dao ).
+
+    data(o_friend) =
+    lcl_user_builder=>get_instance(
+                   )->with_friend( o_another_user
+                   )->with_friend( o_registred_user
+                   )->with_thip( o_to_brazil
+                   )->with_thip( o_to_london
+                   )->build( ).
+
+    try.
+        data(lt_friend_trips) = o_trip_service->getfriendstrips( io_user = o_friend
+                                                                    io_loggedinuser = o_registred_user ).
+      catch lcx_user_not_logged_in.
+    endtry.
+
+    cl_abap_unit_assert=>assert_equals(
+    act = lines( lt_friend_trips )
+    exp = 2
+    msg  = |These retrieved trips are not correct| ).
+
+  endmethod.
+
+endclass.
+
+class ltc_trip_dao_test definition final risk level harmless for testing.
+  private section.
+    data: mo_trip_dao type ref to lcl_trip_dao,
+          o_user      type ref to lcl_user.
+    methods: setup.
+
+    "SHOULD......................
+    "throw_exception_when_retriving_user_trips
+    methods throw_excpt_when_ret_user_trip for testing.
+
+endclass.
+
+class ltc_trip_dao_test implementation.
+  method setup.
+    mo_trip_dao = new #( ).
+    o_user      = new #( ).
+  endmethod.
+
+  "SHOULD......................
+  "throw_exception_when_retriving_user_trips
+  method throw_excpt_when_ret_user_trip.
+    try.
+        mo_trip_dao->tripsby( o_user ).
+      catch cx_root.
+        data(lv_exception_occured) = abap_true.
+    endtry.
+    cl_abap_unit_assert=>assert_true(
+      act  = lv_exception_occured
+      msg  = |An exception did not occurred| ).
+  endmethod.
+
+endclass.
+
+class ltc_user_test definition final risk level harmless for testing.
+
+  private section.
+    class-data: o_bob  type ref to lcl_user,
+                o_paul type ref to lcl_user.
+
+    methods: setup.
+    methods: teardown.
+    methods: inform_when_user_arent_friends for testing.
+    methods: inform_when_users_are_friends  for testing.
+
+endclass.
+
+class ltc_user_test implementation.
+
+  method setup.
+    o_bob  = new #( ).
+    o_paul = new #( ).
+  endmethod.
+
+  method teardown.
+    free: o_bob, o_paul.
+  endmethod.
+
+  "SHOULD......................
+  "inform when users are not friends
+  method inform_when_user_arent_friends.
+
+    data(o_user) =
+    lcl_user_builder=>get_instance(
+                   )->with_friend( o_bob
+                   )->build( ).
+
+    data(is_friend) = o_user->isfriendwith( o_paul ).
+
+    cl_abap_unit_assert=>assert_equals(
+    act = is_friend
+    exp = abap_false
+    msg  = |These users are friends| ).
+
+  endmethod.
+
+  "inform when users are friends
+  method inform_when_users_are_friends.
+
+    data(o_user) =
+    lcl_user_builder=>get_instance(
+                   )->with_friend( o_bob
+                   )->with_friend( o_paul
+                   )->build( ).
+
+    data(is_friend) = o_user->isfriendwith( o_paul ).
+
+    cl_abap_unit_assert=>assert_equals(
+    act = is_friend
+    exp = abap_true
+    msg  = |These users are not friends| ).
+
+  endmethod.
+
+endclass.
